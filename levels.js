@@ -25,11 +25,13 @@ const LEVEL_ROLES = {
     100: "1486851069807169627"
 };
 
+// Slower XP formula
 function xpForLevel(level) {
-    return 5 * level * level + 50 * level + 100;
+    return 10 * level * level + 75 * level + 200;
 }
 
-function isDoubleXP(){
+// Double XP on weekends
+function isDoubleXP() {
     const day = new Date().getDay();
     return day === 6 || day === 0;
 }
@@ -40,7 +42,9 @@ function getUser(guildId, userId) {
         db[guildId][userId] = {
             chatXP: 0,
             voiceXP: 0,
-            level: 0
+            level: 0,
+            lastMessage: 0,
+            streak: 0
         };
     }
     return db[guildId][userId];
@@ -58,12 +62,22 @@ export function registerLevels(client) {
         if (cooldown.has(key)) return;
 
         cooldown.set(key, true);
-        setTimeout(() => cooldown.delete(key), 15000);
+        setTimeout(() => cooldown.delete(key), 30000); // 30s cooldown
 
         const user = getUser(msg.guild.id, msg.author.id);
 
-        let xp = Math.floor(Math.random() * 8) + 5;
-        if(isDoubleXP()) xp *= 2;
+        let xp = Math.floor(Math.random() * 4) + 2; // 2-5 XP
+        if (isDoubleXP()) xp *= 2;
+
+        // Chat streak bonus
+        const now = Date.now();
+        if (user.lastMessage && now - user.lastMessage < 60000) { // within 1 min
+            user.streak = (user.streak || 0) + 1;
+            xp += Math.min(user.streak, 3); // max +3 XP bonus
+        } else {
+            user.streak = 0;
+        }
+        user.lastMessage = now;
 
         user.chatXP += xp;
 
@@ -71,29 +85,35 @@ export function registerLevels(client) {
         save();
     });
 
-    // VOICE XP
+    // VOICE XP & AFK detection
     setInterval(async () => {
         client.guilds.cache.forEach(async guild => {
             guild.channels.cache
-                .filter(c => c.type === 2)
+                .filter(c => c.type === 2) // voice channels
                 .forEach(channel => {
-                    channel.members.forEach(async member => {
-                        if (member.user.bot) return;
+                    const members = channel.members.filter(m => !m.user.bot);
+                    if (members.size < 2) return; // minimum 2 humans
 
+                    members.forEach(async member => {
                         const user = getUser(guild.id, member.id);
 
-                        let xp = 10;
-                        if(isDoubleXP()) xp *= 2;
+                        // Reset chat streak if fully AFK
+                        if (member.voice.selfMute && member.voice.selfDeaf) {
+                            user.streak = 0;
+                            return;
+                        }
+
+                        let xp = 5; // base voice XP per minute
+                        if (isDoubleXP()) xp *= 2;
 
                         user.voiceXP += xp;
-
                         await checkLevelUp(client, guild, member, user);
                     });
                 });
         });
 
         save();
-    }, 60000);
+    }, 60000); // every 1 minute
 }
 
 async function checkLevelUp(client, guild, member, user) {
@@ -110,18 +130,24 @@ async function checkLevelUp(client, guild, member, user) {
     if (LEVEL_ROLES[user.level]) {
         const roleId = LEVEL_ROLES[user.level];
 
+        // remove previous level roles
         Object.values(LEVEL_ROLES).forEach(async r => {
             if (member.roles.cache.has(r)) {
-                await member.roles.remove(r).catch(()=>{});
+                await member.roles.remove(r).catch(() => {});
             }
         });
 
-        await member.roles.add(roleId).catch(()=>{});
+        await member.roles.add(roleId).catch(() => {});
         roleUnlocked = guild.roles.cache.get(roleId);
     }
 
     const channel = guild.channels.cache.get(LEVEL_UP_CHANNEL);
     if (!channel) return;
+
+    // Visual chat streak display
+    const maxStreakDisplay = 5;
+    const flames = "🔥".repeat(Math.min(user.streak, maxStreakDisplay));
+    const streakText = flames ? `${flames} (${user.streak})` : "None";
 
     const embed = new EmbedBuilder()
         .setColor(isDoubleXP() ? "#ff9900" : "#00ffaa")
@@ -133,11 +159,12 @@ async function checkLevelUp(client, guild, member, user) {
             { name: "Unlocked Role", value: roleUnlocked ? roleUnlocked.name : "None", inline: false },
             { name: "💬 Chat XP", value: `${user.chatXP}`, inline: true },
             { name: "🎤 Voice XP", value: `${user.voiceXP}`, inline: true },
-            { name: "⭐ Total XP", value: `${totalXP}`, inline: true }
+            { name: "⭐ Total XP", value: `${totalXP}`, inline: true },
+            { name: "🔥 Chat Streak", value: streakText, inline: false }
         )
         .setTimestamp();
 
-    if(isDoubleXP()){
+    if (isDoubleXP()) {
         embed.addFields({
             name: "🔥 Event",
             value: "Double XP Weekend Active",
