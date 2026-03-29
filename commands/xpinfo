@@ -1,0 +1,43 @@
+// commands/xpinfo.js
+import { SlashCommandBuilder, EmbedBuilder } from 'discord.js';
+
+export const data = new SlashCommandBuilder()
+    .setName('xpinfo')
+    .setDescription('Shows information about the XP & leveling system');
+
+export async function execute(interaction) {
+    const embed = new EmbedBuilder()
+        .setColor("#00ffaa")
+        .setTitle("🦖 XP & Leveling System Info")
+        .setDescription("Here’s how our leveling system works:")
+        .addFields(
+            { 
+                name: "💬 Chat XP", 
+                value: "• 2–5 XP per message, cooldown 30s\n• 🔥 Streak bonus: +1 XP per consecutive message within 1 minute (max +3)", 
+                inline: false 
+            },
+            { 
+                name: "🎤 Voice XP", 
+                value: "• 5 XP per minute in a voice channel\n• ✅ Minimum 2 humans in the channel\n• ❌ Cannot be self-muted & self-deafened at the same time\n• 🔥 AFK users lose their chat streak", 
+                inline: false 
+            },
+            { 
+                name: "⭐ Leveling", 
+                value: "• XP required for next level: `10*level^2 + 75*level + 200`\n• Roles are awarded at levels: 5, 10, 15, 20, 30, 40, 50, 100", 
+                inline: false 
+            },
+            { 
+                name: "🔥 Double XP Weekends", 
+                value: "• XP is doubled on Saturday and Sunday", 
+                inline: false 
+            },
+            { 
+                name: "📅 /daily", 
+                value: "• Claim 150 XP once per day", 
+                inline: false 
+            }
+        )
+        .setTimestamp();
+
+    await interaction.reply({ embeds: [embed], ephemeral: true });
+}
